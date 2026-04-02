@@ -1,0 +1,34 @@
+model:
+  name: google/gemma-4-E2B-it
+  path: /mnt/e/models/huggingface/hub/models--google--gemma-4-E2B-it
+  device: cuda  # or cpu
+  dtype: bfloat16
+
+memory:
+  context_budget_mb: 512       # VRAM per replica context
+  max_replicas: 3              # hard cap regardless of VRAM
+  replica_depth_limit: 1       # replicas cannot spawn replicas
+
+audio:
+  enabled: true
+  input_device: default
+  output_device: default
+  wake_word: "hey microclaw"
+
+api:
+  host: 0.0.0.0
+  port: 8769
+  openclaw_endpoint: http://localhost:18789  # register with main session
+
+cluster:
+  enabled: false
+  discovery: mdns              # mdns | static
+  peers: []                    # static peer list if discovery=static
+  node_id: microclaw-local
+
+skills_dir: ./skills
+routines_dir: ./routines
+
+logging:
+  level: INFO
+  file: /tmp/microclaw.log
