@@ -1,0 +1,53 @@
+services:
+
+  microclaw:
+    build: .
+    container_name: microclaw
+    restart: unless-stopped
+    ports:
+      - "8769:8769"
+    volumes:
+      # Mount model from host — no re-download
+      - /mnt/e/models/huggingface:/models:ro
+      # Persist session memory
+      - microclaw-memory:/root
+    environment:
+      - HF_HOME=/models
+      - TRANSFORMERS_CACHE=/models
+    # GPU passthrough (CUDA)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    # Override config to use container paths
+    command: >
+      python -m uvicorn src.api:app
+      --host 0.0.0.0
+      --port 8769
+
+  # Chat CLI variant — run interactively
+  microclaw-cli:
+    build: .
+    container_name: microclaw-cli
+    profiles: ["cli"]  # only starts with: docker compose --profile cli run microclaw-cli
+    stdin_open: true
+    tty: true
+    volumes:
+      - /mnt/e/models/huggingface:/models:ro
+      - microclaw-memory:/root
+    environment:
+      - HF_HOME=/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: ./microclaw
+
+volumes:
+  microclaw-memory:
