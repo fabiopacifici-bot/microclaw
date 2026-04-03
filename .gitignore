@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.log
+data/d3.v7.min.js

@@ -3,6 +3,18 @@
 > A local-first, voice-native, skill-compatible AI agent powered by Gemma 4 E2B-it.  
 > Smaller than NanoClaw. Zero cloud. Zero token cost. Runs on the edge.
 
+## Quick Start
+
+```bash
+git clone https://github.com/fabiopacifici-bot/microclaw
+cd microclaw
+pip install -r requirements.txt
+./microclaw
+```
+
+Requires: Python 3.11+, CUDA GPU with 10GB+ VRAM (for full model), or CPU (slow)  
+Model: auto-downloaded from HuggingFace on first run if not cached locally.
+
 ---
 
 ## Vision

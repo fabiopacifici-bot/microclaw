@@ -1,0 +1,240 @@
+#!/usr/bin/env python3
+"""
+microclaw — CLI chat interface for MicroClaw agent.
+Usage:
+  microclaw              # start chat
+  microclaw /skills      # list available skills
+  microclaw /routines    # list available routines
+  microclaw /status      # system status
+  microclaw /help        # show commands
+"""
+import sys
+import os
+import json
+import argparse
+import readline  # enables up-arrow history
+from pathlib import Path
+
+# Add src/ to path
+SRC = Path(__file__).parent / "src"
+sys.path.insert(0, str(SRC))
+
+BASE_DIR    = Path(__file__).parent
+CONFIG_PATH = BASE_DIR / "config.yaml"
+HISTORY_FILE = Path.home() / ".microclaw_history"
+
+HELP = """
+MicroClaw CLI — slash commands:
+  /skills          list available skills
+  /routines        list available routines
+  /status          system status (VRAM, replicas, services)
+  /run <routine>   execute a named routine
+  /use <skill>     activate a skill for this session
+  /memory          show recent memory entries
+  /clear           clear chat history
+  /help            show this help
+  /exit  /quit     exit
+
+Type anything else to chat with the agent.
+"""
+
+def load_history():
+    try:
+        readline.read_history_file(str(HISTORY_FILE))
+    except FileNotFoundError:
+        pass
+
+def save_history():
+    readline.write_history_file(str(HISTORY_FILE))
+    readline.set_history_length(500)
+
+def print_header():
+    import yaml, torch
+    cfg = yaml.safe_load(open(CONFIG_PATH))
+    model_name = cfg["model"]["name"]
+    if torch.cuda.is_available():
+        free, total = torch.cuda.mem_get_info()
+        vram_info = f"{free/1024**3:.1f}GB free / {total/1024**3:.1f}GB"
+    else:
+        import psutil
+        vram_info = f"CPU · {psutil.virtual_memory().available/1024**3:.1f}GB RAM free"
+    print("\n\033[96m╔══════════════════════════════╗")
+    print("║   MicroClaw  🦞  v0.1.0      ║")
+    print("║   Local AI · Zero tokens     ║")
+    print("╚══════════════════════════════╝\033[0m")
+    print(f"\033[90m  Model: {model_name}")
+    print(f"  VRAM:  {vram_info}")
+    print("  Type /help for commands. Ctrl+C to exit.\033[0m\n")
+
+def cmd_skills():
+    from skills import load_all
+    import yaml
+    cfg = yaml.safe_load(open(CONFIG_PATH))
+    skills = load_all(str(BASE_DIR / cfg.get("skills_dir", "skills")))
+    if not skills:
+        print("\033[90m  No skills loaded.\033[0m")
+        return
+    print(f"\n\033[96m  Skills ({len(skills)}):\033[0m")
+    for s in skills:
+        print(f"  \033[92m/{s['name']}\033[0m  —  {s['description'][:60]}")
+    print()
+
+def cmd_routines():
+    from routines import load_all
+    import yaml
+    cfg = yaml.safe_load(open(CONFIG_PATH))
+    routines = load_all(str(BASE_DIR / cfg.get("routines_dir", "routines")))
+    if not routines:
+        print("\033[90m  No routines loaded.\033[0m")
+        return
+    print(f"\n\033[96m  Routines ({len(routines)}):\033[0m")
+    for r in routines:
+        trigger = r.get("trigger", {})
+        t = trigger.get("also", trigger.get("cron", "manual")) if isinstance(trigger, dict) else str(trigger)
+        print(f"  \033[93m/{r['name']}\033[0m  —  {r['description'][:55]}  \033[90m({t})\033[0m")
+    print()
+
+def cmd_status():
+    import torch, yaml
+    cfg = yaml.safe_load(open(CONFIG_PATH))
+    print(f"\n\033[96m  MicroClaw Status\033[0m")
+    print(f"  Model:   {cfg['model']['name']}")
+    if torch.cuda.is_available():
+        free, total = torch.cuda.mem_get_info()
+        print(f"  VRAM:    {free/1024**3:.1f}GB free / {total/1024**3:.1f}GB total")
+    else:
+        import psutil
+        print(f"  RAM:     {psutil.virtual_memory().available/1024**3:.1f}GB free")
+    print(f"  Port:    {cfg['api']['port']}")
+    print(f"  Audio:   {'enabled' if cfg['audio']['enabled'] else 'disabled'}")
+    print()
+
+def run_chat():
+    # Lazy-load model only when needed
+    _model_loaded = False
+    _infer = None
+
+    def get_infer():
+        nonlocal _model_loaded, _infer
+        if not _model_loaded:
+            print("\033[90m  Loading model...\033[0m", flush=True)
+            try:
+                from model import load, infer
+                load(str(CONFIG_PATH))
+                _infer = infer
+                _model_loaded = True
+                print("\033[90m  Ready.\033[0m\n")
+            except Exception as e:
+                err = str(e)
+                if "No such file or directory" in err or "not found" in err.lower() or "does not appear" in err.lower():
+                    print(f"\033[91m  Model not found. Check 'path' in config.yaml.\033[0m")
+                    print(f"\033[90m  Expected: {err[:200]}\033[0m\n")
+                else:
+                    print(f"\033[91m  Model load failed: {err[:300]}\033[0m\n")
+                return None
+        return _infer
+
+    # Load memory from last session
+    from memory import load as mem_load, save as mem_save, show as mem_show, clear as mem_clear
+    history = mem_load()
+    if history:
+        print(f"\033[90m  Restored {len(history)} messages from last session.\033[0m\n")
+
+    while True:
+        try:
+            user_input = input("\033[92mYou:\033[0m ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print("\n\033[90mBye.\033[0m")
+            save_history()
+            mem_save(history)
+            break
+
+        if not user_input:
+            continue
+
+        # Slash commands (no model needed)
+        if user_input in ("/exit", "/quit", "exit", "quit"):
+            print("\033[90mBye.\033[0m")
+            save_history()
+            mem_save(history)
+            break
+        elif user_input == "/help":
+            print(HELP)
+            continue
+        elif user_input == "/skills":
+            cmd_skills()
+            continue
+        elif user_input == "/routines":
+            cmd_routines()
+            continue
+        elif user_input == "/status":
+            cmd_status()
+            continue
+        elif user_input == "/clear":
+            history.clear()
+            mem_clear()
+            print("\033[90m  History cleared.\033[0m")
+            continue
+        elif user_input == "/memory":
+            print(f"\n\033[96m  Last {5} exchanges:\033[0m")
+            print(mem_show())
+            print()
+            continue
+        elif user_input.startswith("/run "):
+            routine_name = user_input[5:].strip()
+            from routines import load_all, find, run
+            import yaml
+            cfg = yaml.safe_load(open(CONFIG_PATH))
+            routines = load_all(str(BASE_DIR / cfg.get("routines_dir", "routines")))
+            r = find(routine_name, routines)
+            if not r:
+                print(f"\033[91m  Routine '{routine_name}' not found.\033[0m")
+                continue
+            infer_fn = get_infer()
+            if infer_fn is None:
+                continue
+            print(f"\033[90m  Running routine: {r['name']}...\033[0m")
+            result = run(r, infer_fn)
+            print(f"\033[96mMicroClaw:\033[0m {result}\n")
+            continue
+
+        # Chat — load model on first message
+        infer_fn = get_infer()
+        if infer_fn is None:
+            continue
+        history.append({"role": "user", "content": user_input})
+        messages = [
+            {"role": "system", "content": "You are MicroClaw, a concise local AI assistant. Be helpful and brief."},
+        ] + history[-10:]  # keep last 10 turns
+
+        reply = infer_fn(messages)
+        history.append({"role": "assistant", "content": reply})
+        print(f"\033[96mMicroClaw:\033[0m {reply}\n")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="MicroClaw CLI")
+    parser.add_argument("command", nargs="?", help="Slash command to run directly (e.g. /skills)")
+    args = parser.parse_args()
+
+    os.chdir(BASE_DIR)
+    load_history()
+
+    if args.command:
+        cmd = args.command.lower()
+        if cmd == "/skills":
+            cmd_skills()
+        elif cmd == "/routines":
+            cmd_routines()
+        elif cmd == "/status":
+            cmd_status()
+        else:
+            print(HELP)
+        return
+
+    print_header()
+    run_chat()
+
+
+if __name__ == "__main__":
+    main()
