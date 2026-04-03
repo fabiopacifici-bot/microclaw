@@ -14,6 +14,30 @@ newgrp docker
 sudo dockerd &
 ```
 
+## Docker Model Runner (Recommended for new installs)
+
+The simplest way to run MicroClaw — no local model download needed.
+
+### Pull the model
+```bash
+docker model pull gemma4
+```
+
+This pulls Gemma 4 E2B-it as an OCI artifact from Docker Hub. Works the same as pulling a container image — versioned, cached, portable.
+
+### Run MicroClaw
+```bash
+# API server
+docker compose --profile docker-model up -d microclaw-hub
+
+# Interactive CLI
+docker compose --profile docker-model-cli run --rm microclaw-hub-cli
+```
+
+> **Note:** Full Docker Model Runner integration (running inference via the model runner daemon) is coming in Docker Desktop / dockerd updates over the coming weeks. The current setup pulls the model artifact and mounts it for direct inference.
+
+## Local model mount (existing installs)
+
 ## Run as API server
 
 ```bash

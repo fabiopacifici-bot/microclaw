@@ -1,3 +1,19 @@
+# MicroClaw — Docker Compose
+#
+# Profile: (default) — mounts model from host filesystem
+#   docker compose up -d microclaw
+#
+# Profile: docker-model — uses Docker Model Runner (docker model pull gemma4)
+#   docker model pull gemma4
+#   docker compose --profile docker-model up -d microclaw-hub
+#
+# Profile: cli — interactive chat via local model
+#   docker compose --profile cli run --rm microclaw-cli
+#
+# Profile: docker-model-cli — interactive chat via Docker Model Runner
+#   docker model pull gemma4
+#   docker compose --profile docker-model-cli run --rm microclaw-hub-cli
+
 services:
 
   microclaw:
@@ -40,6 +56,54 @@ services:
       - microclaw-memory:/root
     environment:
       - HF_HOME=/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: ./microclaw
+
+  # Profile: docker-model — uses docker model pull gemma4 (no local path needed)
+  microclaw-hub:
+    build: .
+    container_name: microclaw-hub
+    profiles: ["docker-model"]
+    restart: unless-stopped
+    ports:
+      - "8769:8769"
+    volumes:
+      - microclaw-memory:/root
+    environment:
+      - MODEL_SOURCE=docker-hub
+      - MODEL_ID=gemma4
+      # Docker Model Runner endpoint (when available)
+      - DOCKER_MODEL_RUNNER_ENDPOINT=http://model-runner:8080
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: >
+      python -m uvicorn src.api:app
+      --host 0.0.0.0
+      --port 8769
+
+  # Interactive CLI via Docker Model Runner
+  microclaw-hub-cli:
+    build: .
+    container_name: microclaw-hub-cli
+    profiles: ["docker-model-cli"]
+    stdin_open: true
+    tty: true
+    volumes:
+      - microclaw-memory:/root
+    environment:
+      - MODEL_SOURCE=docker-hub
+      - MODEL_ID=gemma4
     deploy:
       resources:
         reservations:

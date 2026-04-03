@@ -2,6 +2,7 @@
 model.py — Load Gemma 4 E2B-it and expose inference + audio.
 One model loaded once. All agents share it.
 """
+import os
 import torch
 import yaml
 from pathlib import Path
@@ -25,7 +26,16 @@ def load(config_path="config.yaml"):
         return _model, _processor
 
     cfg = load_config(config_path)
-    model_path = cfg["model"]["path"]
+    model_source = os.environ.get("MODEL_SOURCE", "local")
+
+    if model_source == "docker-hub":
+        # Docker Model Runner: use model ID directly, HuggingFace will resolve it
+        # Full Docker Model Runner API integration pending (docker/model-runner)
+        model_path = os.environ.get("MODEL_ID", cfg["model"]["name"])
+        print(f"[model] Docker Hub mode — using {model_path}")
+    else:
+        model_path = cfg["model"]["path"]
+
     device = cfg["model"].get("device", "cuda" if torch.cuda.is_available() else "cpu")
     dtype = getattr(torch, cfg["model"].get("dtype", "bfloat16"))
 

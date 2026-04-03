@@ -7,6 +7,21 @@
 
 ## Quick Start
 
+### Docker Model Runner (easiest — no manual download)
+
+```bash
+# Pull Gemma 4 from Docker Hub
+docker model pull gemma4
+
+# Run MicroClaw
+docker compose --profile docker-model up -d microclaw-hub
+
+# Or interactive CLI
+docker compose --profile docker-model-cli run --rm microclaw-hub-cli
+```
+
+No model download required. Works on any machine with Docker.
+
 ### Direct (recommended for first run)
 
 ```bash
