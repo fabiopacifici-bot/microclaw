@@ -3,6 +3,8 @@
 > A local-first, voice-native, skill-compatible AI agent powered by Gemma 4 E2B-it.  
 > Smaller than NanoClaw. Zero cloud. Zero token cost. Runs on the edge.
 
+![MicroClaw v0.1.0](docs/microclaw_0.1.0_preview.png)
+
 ## Quick Start
 
 ### Direct (recommended for first run)
