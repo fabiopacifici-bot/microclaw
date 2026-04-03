@@ -5,15 +5,57 @@
 
 ## Quick Start
 
+### Direct (recommended for first run)
+
 ```bash
 git clone https://github.com/fabiopacifici-bot/microclaw
 cd microclaw
-pip install -r requirements.txt
+pip install fastapi uvicorn pyyaml requests sounddevice psutil transformers>=5.5.0 accelerate
 ./microclaw
 ```
 
-Requires: Python 3.11+, CUDA GPU with 10GB+ VRAM (for full model), or CPU (slow)  
-Model: auto-downloaded from HuggingFace on first run if not cached locally.
+Type a message — the model loads on first input (~30-60s). Subsequent responses are fast.
+
+### Docker (no Desktop required)
+
+```bash
+# Start Docker in WSL2 without Docker Desktop
+sudo dockerd &
+
+# API server mode
+docker compose up -d microclaw
+
+# Interactive CLI
+docker compose --profile cli run --rm microclaw-cli
+```
+
+See [docs/DOCKER.md](docs/DOCKER.md) for GPU passthrough setup and model mounting.
+
+### CLI commands
+
+```
+./microclaw            # start chat
+./microclaw /skills    # list available skills
+./microclaw /routines  # list available routines
+./microclaw /status    # VRAM + system info
+```
+
+Inside chat:
+```
+/skills       list skills
+/routines     list routines
+/run <name>   execute a routine
+/memory       show last 5 exchanges
+/status       system info
+/help         all commands
+/exit         quit
+```
+
+### Requirements
+
+- Python 3.11+
+- CUDA GPU 10GB+ VRAM recommended (CPU fallback available)
+- Gemma 4 E2B-it model — set `model.path` in `config.yaml` or let it auto-download via HuggingFace
 
 ---
 
