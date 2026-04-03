@@ -32,21 +32,32 @@ def load(config_path="config.yaml"):
     print(f"[model] Loading {model_path} on {device} ({dtype})")
     _processor = AutoProcessor.from_pretrained(model_path)
     _model = AutoModelForCausalLM.from_pretrained(
-        model_path, torch_dtype=dtype, device_map="auto"
+        model_path, dtype=dtype, device_map="auto"
     )
     print(f"[model] Ready")
     return _model, _processor
 
 
 def infer(messages: list, max_new_tokens=512) -> str:
-    """Run a chat completion. messages = OpenAI-style list."""
-    model, processor = _model, _processor
-    inputs = processor.apply_chat_template(
-        messages, add_generation_prompt=True, tokenize=True, return_tensors="pt"
-    ).to(model.device)
+    """Run a chat completion. messages = OpenAI-style list with string content."""
+    # Gemma 4 processor requires content as list of dicts with 'type' key
+    formatted = []
+    for m in messages:
+        content = m["content"]
+        if isinstance(content, str):
+            content = [{"type": "text", "text": content}]
+        formatted.append({"role": m["role"], "content": content})
+
+    inputs = _processor.apply_chat_template(
+        formatted,
+        add_generation_prompt=True,
+        tokenize=True,
+        return_tensors="pt"
+    ).to(_model.device)
+
     with torch.no_grad():
-        out = model.generate(inputs, max_new_tokens=max_new_tokens, do_sample=False)
-    return processor.decode(out[0][inputs.shape[-1]:], skip_special_tokens=True)
+        out = _model.generate(inputs, max_new_tokens=max_new_tokens, do_sample=False)
+    return _processor.decode(out[0][inputs.shape[-1]:], skip_special_tokens=True)
 
 
 def vram_free_mb() -> int:
