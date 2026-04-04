@@ -60,8 +60,10 @@ def handle_message(chat_id: str, text: str):
 
     if text == "/skills":
         _ensure_agent()
+        import yaml
+        with open(CONFIG_PATH) as _f: _cfg = yaml.safe_load(_f)
         from skills import load_all
-        skills = load_all(str(Path(__file__).parent.parent / "skills"))
+        skills = load_all(_cfg.get("skills_dir", str(Path(__file__).parent.parent / "skills")))
         if not skills:
             send_message(chat_id, "🔧 No skills loaded.")
         else:
@@ -73,8 +75,10 @@ def handle_message(chat_id: str, text: str):
 
     if text == "/routines":
         _ensure_agent()
+        import yaml
+        with open(CONFIG_PATH) as _f: _cfg = yaml.safe_load(_f)
         from routines import load_all
-        routines = load_all(str(Path(__file__).parent.parent / "routines"))
+        routines = load_all(_cfg.get("routines_dir", str(Path(__file__).parent.parent / "routines")))
         if not routines:
             send_message(chat_id, "⚙️ No routines loaded.")
         else:
