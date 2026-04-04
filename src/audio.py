@@ -5,7 +5,13 @@ No Whisper. No TTS. One model.
 """
 import io
 import numpy as np
-import sounddevice as sd
+try:
+    import sounddevice as sd
+    AUDIO_AVAILABLE = True
+except OSError:
+    sd = None
+    AUDIO_AVAILABLE = False
+    print("[audio] PortAudio not found — audio disabled")
 
 SAMPLE_RATE = 16000
 CHANNELS = 1
