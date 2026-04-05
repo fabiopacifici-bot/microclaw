@@ -6,3 +6,7 @@ venv/
 data/d3.v7.min.js
 .env
 *.env
+
+# Local workspace symlinks — not for repo
+/skills
+/routines
