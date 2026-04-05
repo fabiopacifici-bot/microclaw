@@ -195,11 +195,9 @@ def handle_message(chat_id: str, text: str):
 def _ensure_agent():
     global _agent_ready
     if not _agent_ready:
-        # Load model first (bot runs in its own process — globals don't carry over from API server)
-        import model as _model_module
-        if _model_module._model is None:
-            _model_module.load(CONFIG_PATH)
-        # Then init agent
+        import model as _m
+        if _m._model is None:
+            _m.load(CONFIG_PATH)
         import agent
         agent.init(CONFIG_PATH)
         _agent_ready = True
