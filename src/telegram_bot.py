@@ -34,6 +34,48 @@ def send_message(chat_id: str, text: str, parse_mode: str = "Markdown"):
         print(f"[bot] send error: {e}")
 
 
+def send_buttons(chat_id: str, text: str, buttons: list):
+    """Send a message with inline keyboard buttons."""
+    try:
+        requests.post(f"{API_BASE}/sendMessage", json={
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "Markdown",
+            "reply_markup": {"inline_keyboard": buttons},
+        }, timeout=10)
+    except Exception as e:
+        print(f"[bot] send_buttons error: {e}")
+
+
+def handle_callback(chat_id: str, data: str, message_id: int):
+    """Handle inline button callbacks."""
+    if data.startswith("routine_run_"):
+        name = data[12:]
+        handle_message(chat_id, f"/run {name}")
+    elif data.startswith("routine_info_"):
+        name = data[13:]
+        _ensure_agent()
+        import yaml
+        with open(CONFIG_PATH) as _f: _cfg = yaml.safe_load(_f)
+        from routines import load_all, find
+        routines = load_all(_cfg.get("routines_dir", str(Path(__file__).parent.parent / "routines")))
+        r = find(name, routines)
+        if r:
+            trigger = r.get("trigger", {})
+            t = trigger.get("also", trigger.get("cron", "manual")) if isinstance(trigger, dict) else "manual"
+            send_message(chat_id, f"*{r['name']}*\n_{r['description']}_\nTrigger: `{t}`\n\nTap ▶ Run to execute.")
+    elif data.startswith("skill_info_"):
+        name = data[11:]
+        _ensure_agent()
+        import yaml
+        with open(CONFIG_PATH) as _f: _cfg = yaml.safe_load(_f)
+        from skills import load_all, find
+        skills = load_all(_cfg.get("skills_dir", str(Path(__file__).parent.parent / "skills")))
+        s = find(name, skills)
+        if s:
+            send_message(chat_id, f"*{s['name']}*\n_{s['description']}_")
+
+
 def handle_message(chat_id: str, text: str):
     global _agent_ready
 
@@ -67,10 +109,17 @@ def handle_message(chat_id: str, text: str):
         if not skills:
             send_message(chat_id, "🔧 No skills loaded.")
         else:
-            lines = [f"🔧 *Skills ({len(skills)}):*"]
+            # Send as inline buttons (2 per row)
+            buttons = []
+            row = []
             for s in skills:
-                lines.append(f"• `{s['name']}` — {s['description'][:60]}")
-            send_message(chat_id, "\n".join(lines))
+                row.append({"text": s['name'], "callback_data": f"skill_info_{s['name']}"})
+                if len(row) == 2:
+                    buttons.append(row)
+                    row = []
+            if row:
+                buttons.append(row)
+            send_buttons(chat_id, f"🔧 *Skills ({len(skills)}) — tap to learn more:*", buttons)
         return
 
     if text == "/routines":
@@ -82,12 +131,14 @@ def handle_message(chat_id: str, text: str):
         if not routines:
             send_message(chat_id, "⚙️ No routines loaded.")
         else:
-            lines = [f"⚙️ *Routines ({len(routines)}):*"]
+            # Send as inline buttons — one per row with Run button
+            buttons = []
             for r in routines:
-                trigger = r.get("trigger", {})
-                t = trigger.get("also", trigger.get("cron", "manual")) if isinstance(trigger, dict) else "manual"
-                lines.append(f"• `{r['name']}` — {r['description'][:55]} _{t}_")
-            send_message(chat_id, "\n".join(lines))
+                buttons.append([
+                    {"text": f"⚙️ {r['name']}", "callback_data": f"routine_info_{r['name']}"},
+                    {"text": "▶ Run", "callback_data": f"routine_run_{r['name']}"}
+                ])
+            send_buttons(chat_id, f"⚙️ *Routines ({len(routines)}):*", buttons)
         return
 
     if text == "/status":
@@ -156,7 +207,7 @@ def poll():
 
     while True:
         try:
-            params = {"timeout": 30, "allowed_updates": ["message"]}
+            params = {"timeout": 30, "allowed_updates": ["message", "callback_query"]}
             if offset:
                 params["offset"] = offset
 
@@ -165,6 +216,25 @@ def poll():
 
             for update in data.get("result", []):
                 offset = update["update_id"] + 1
+                # Handle callback queries (button taps)
+                cb = update.get("callback_query", {})
+                if cb:
+                    cb_chat = cb.get("message", {}).get("chat", {}).get("id")
+                    cb_data = cb.get("data", "")
+                    cb_msg_id = cb.get("message", {}).get("message_id")
+                    if cb_chat and cb_data:
+                        threading.Thread(
+                            target=handle_callback,
+                            args=(str(cb_chat), cb_data, cb_msg_id),
+                            daemon=True
+                        ).start()
+                    # Answer callback to remove loading state
+                    try:
+                        requests.post(f"{API_BASE}/answerCallbackQuery",
+                            json={"callback_query_id": cb.get("id", "")}, timeout=5)
+                    except: pass
+                    continue
+
                 msg = update.get("message", {})
                 chat_id = msg.get("chat", {}).get("id")
                 text = msg.get("text", "")
