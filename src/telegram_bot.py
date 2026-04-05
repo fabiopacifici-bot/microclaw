@@ -190,13 +190,19 @@ def handle_message(chat_id: str, text: str):
     send_message(chat_id, f"🦞 {reply}")
 
 
+CONFIG_PATH = str(Path(__file__).parent.parent / "config.yaml")
+
+
 def _ensure_agent():
     global _agent_ready
     if not _agent_ready:
-        import yaml
-        config_path = str(Path(__file__).parent.parent / "config.yaml")
+        # Load model first (bot runs in its own process — globals don't carry over from API server)
+        import model as _model_module
+        if _model_module._model is None:
+            _model_module.load(CONFIG_PATH)
+        # Then init agent
         import agent
-        agent.init(config_path)
+        agent.init(CONFIG_PATH)
         _agent_ready = True
 
 
@@ -269,4 +275,8 @@ if __name__ == "__main__":
 
     print(f"[bot] Starting MicroClaw bot (@clawmicrobot)")
     print(f"[bot] Allowed chat: {ALLOWED_CHAT_ID or 'all'}")
+    print("[bot] Pre-loading model...")
+    import model as _model_module
+    _model_module.load(CONFIG_PATH)
+    print("[bot] Model ready, starting polling...")
     poll()
