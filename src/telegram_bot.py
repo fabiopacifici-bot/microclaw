@@ -124,8 +124,18 @@ def handle_message(chat_id: str, text: str):
         send_message(chat_id, "⏳ Loading model (~60s)...")
 
     _ensure_agent()
-    from agent import triage
-    reply = triage(text)
+    from model import infer
+    from pathlib import Path
+
+    # Load persona from AGENTS.md
+    agents_file = Path(__file__).parent.parent / "AGENTS.md"
+    system_prompt = agents_file.read_text() if agents_file.exists() else "You are MicroClaw, a concise local AI assistant."
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": text}
+    ]
+    reply = infer(messages, max_new_tokens=512)
     send_message(chat_id, f"🦞 {reply}")
 
 
