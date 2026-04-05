@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 BOT_TOKEN = os.environ.get("MICROCLAW_TELEGRAM_BOT_TOKEN")
 ALLOWED_CHAT_ID = os.environ.get("MICROCLAW_TELEGRAM_CHAT_ID")
 API_BASE = f"https://api.telegram.org/bot{BOT_TOKEN}"
+CONFIG_PATH = str(Path(__file__).parent.parent / "config.yaml")
 
 # Lazy model load
 _agent_ready = False
@@ -189,8 +190,6 @@ def handle_message(chat_id: str, text: str):
     reply = infer(messages, max_new_tokens=512)
     send_message(chat_id, f"🦞 {reply}")
 
-
-CONFIG_PATH = str(Path(__file__).parent.parent / "config.yaml")
 
 
 def _ensure_agent():
