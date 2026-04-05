@@ -34,7 +34,7 @@ def triage(text: str) -> str:
     for r in _routines:
         if r["name"].lower() in lower or f"run {r['name'].lower()}" in lower:
             print(f"[agent] Running routine: {r['name']}")
-            return run_routine(r, infer)
+            return run_routine(r, infer, workspace="/home/pacificDev/.openclaw/workspace")
 
     # --- Skill trigger ---
     for s in _skills:
