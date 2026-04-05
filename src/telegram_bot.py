@@ -187,8 +187,12 @@ def handle_message(chat_id: str, text: str):
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": text}
     ]
-    reply = infer(messages, max_new_tokens=512)
-    send_message(chat_id, f"🦞 {reply}")
+    try:
+        reply = infer(messages, max_new_tokens=512)
+        send_message(chat_id, f"🦞 {reply}")
+    except Exception as e:
+        print(f"[bot] ERROR in infer: {e}", flush=True)
+        send_message(chat_id, f"🦞 Error: {str(e)[:200]}")
 
 
 
