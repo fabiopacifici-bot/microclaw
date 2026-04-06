@@ -41,9 +41,29 @@ def find(name: str, skills: list[dict]) -> dict | None:
 
 
 def run(skill: dict, user_input: str, infer_fn) -> str:
-    """Execute a skill by injecting its instructions as system context."""
+    """Execute a skill using native function-calling when model is loaded."""
+    from model import infer_with_tools, _model
+    from tools import TOOLS
+
+    instructions = skill.get("instructions", "")
+    name = skill.get("name", "skill")
+
+    if _model is not None:
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    f"You are MicroClaw. Execute the '{name}' skill using the available tools.\n\n"
+                    f"Skill instructions:\n{instructions}"
+                ),
+            },
+            {"role": "user", "content": user_input},
+        ]
+        return infer_with_tools(messages, TOOLS)
+
+    # Fallback to plain infer
     messages = [
-        {"role": "system", "content": skill["instructions"]},
+        {"role": "system", "content": instructions},
         {"role": "user", "content": user_input},
     ]
     return infer_fn(messages)

@@ -70,6 +70,111 @@ def infer(messages: list, max_new_tokens=512) -> str:
     return _processor.decode(out[0][inputs.shape[-1]:], skip_special_tokens=True)
 
 
+def infer_with_tools(
+    messages: list,
+    tools: list,
+    workspace: str = "/home/pacificDev/.openclaw/workspace",
+    max_steps: int = 8,
+) -> str:
+    """
+    Agentic inference loop with native function calling.
+    Gemma emits tool calls → we execute them → feed results back → repeat until final answer.
+    Returns the final text response.
+    """
+    from tools import execute_tool
+    import json
+
+    current_messages = [m.copy() for m in messages]
+
+    for step in range(max_steps):
+        formatted = []
+        for m in current_messages:
+            content = m["content"]
+            if isinstance(content, str):
+                content = [{"type": "text", "text": content}]
+            entry = {"role": m["role"], "content": content}
+            if "name" in m:
+                entry["name"] = m["name"]
+            formatted.append(entry)
+
+        text = _processor.apply_chat_template(
+            formatted,
+            tools=tools,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False,
+        )
+        inputs = _processor(text=text, return_tensors="pt").to(_model.device)
+        input_len = inputs["input_ids"].shape[-1]
+
+        with torch.no_grad():
+            out = _model.generate(
+                **inputs,
+                max_new_tokens=512,
+                do_sample=False,
+                temperature=1.0,
+                top_p=0.95,
+                top_k=64,
+            )
+
+        response_text = _processor.decode(out[0][input_len:], skip_special_tokens=True)
+
+        tool_call = _parse_tool_call(response_text)
+        if tool_call is None:
+            return response_text.strip()
+
+        tool_name = tool_call.get("name") or tool_call.get("function", {}).get("name", "")
+        tool_args = tool_call.get("arguments") or tool_call.get("function", {}).get("arguments", {})
+        if isinstance(tool_args, str):
+            try:
+                tool_args = json.loads(tool_args)
+            except Exception:
+                tool_args = {}
+
+        print(f"[tool] {tool_name}({json.dumps(tool_args)[:80]}...)", flush=True)
+        result = execute_tool(tool_name, tool_args, workspace=workspace)
+        print(f"[tool] result: {result[:100]}...", flush=True)
+
+        current_messages.append({"role": "assistant", "content": response_text})
+        current_messages.append({
+            "role": "tool",
+            "content": json.dumps({"result": result}),
+            "name": tool_name,
+        })
+
+    return "(max steps reached)"
+
+
+def _parse_tool_call(text: str) -> "dict | None":
+    """Try to extract a tool call JSON from model output."""
+    import json
+    import re
+
+    patterns = [
+        r"```json\s*(\{.*?\})\s*```",
+        r"<tool_call>\s*(\{.*?\})\s*</tool_call>",
+        r'(\{"name":\s*"[^"]+",\s*"arguments":\s*\{.*?\}\s*\})',
+        r'(\{"function":\s*\{.*?\}\s*\})',
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, text, re.DOTALL)
+        if m:
+            try:
+                return json.loads(m.group(1))
+            except Exception:
+                continue
+
+    stripped = text.strip()
+    if stripped.startswith("{") and stripped.endswith("}"):
+        try:
+            data = json.loads(stripped)
+            if "name" in data or "function" in data:
+                return data
+        except Exception:
+            pass
+    return None
+
+
 def vram_free_mb() -> int:
     """Return free VRAM in MB, or RAM if CPU."""
     if torch.cuda.is_available():

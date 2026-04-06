@@ -24,6 +24,9 @@ CONFIG_PATH = str(Path(__file__).parent.parent / "config.yaml")
 # Lazy model load
 _agent_ready = False
 
+# In-process memory (list of {role, content} dicts)
+_memory: list = []
+
 def send_message(chat_id: str, text: str, parse_mode: str = "Markdown"):
     try:
         requests.post(f"{API_BASE}/sendMessage", json={
@@ -178,17 +181,21 @@ def handle_message(chat_id: str, text: str):
     _ensure_agent()
     from model import infer
     from pathlib import Path
+    import memory as _memory_mod
 
     # Load persona from AGENTS.md
     agents_file = Path(__file__).parent.parent / "AGENTS.md"
     system_prompt = agents_file.read_text() if agents_file.exists() else "You are MicroClaw, a concise local AI assistant."
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": text}
-    ]
+    # Build messages: system + memory context + new user message
+    history = _memory_mod.load()
+    messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": text}]
     try:
         reply = infer(messages, max_new_tokens=512)
+        # Persist user + assistant turn
+        history.append({"role": "user", "content": text})
+        history.append({"role": "assistant", "content": reply})
+        _memory_mod.save(history)
         send_message(chat_id, f"🦞 {reply}")
     except Exception as e:
         print(f"[bot] ERROR in infer: {e}", flush=True)
@@ -276,6 +283,12 @@ if __name__ == "__main__":
 
     print(f"[bot] Starting MicroClaw bot (@clawmicrobot)")
     print(f"[bot] Allowed chat: {ALLOWED_CHAT_ID or 'all'}")
+
+    # Load persisted memory on startup
+    import memory as _memory_startup
+    _mem = _memory_startup.load()
+    print(f"[bot] Memory loaded: {len(_mem)} message(s) from previous sessions")
+
     print("[bot] Pre-loading model...")
     import model as _model_module
     _model_module.load(CONFIG_PATH)
