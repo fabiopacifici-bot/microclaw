@@ -4,6 +4,7 @@ Triage: handle locally or escalate to OpenClaw.
 """
 import requests
 import yaml
+import os
 from model import infer, vram_free_mb
 from skills import load_all as load_skills, find as find_skill, run as run_skill
 from routines import load_all as load_routines, find as find_routine, run as run_routine
@@ -18,8 +19,11 @@ def init(config_path="config.yaml"):
     global _config, _skills, _routines
     with open(config_path) as f:
         _config = yaml.safe_load(f)
-    _skills   = load_skills(_config.get("skills_dir", "./skills"))
-    _routines = load_routines(_config.get("routines_dir", "./routines"))
+    # Env var overrides for Docker / bare-metal
+    skills_dir = os.environ.get("SKILLS_DIR") or _config.get("skills_dir", "./skills")
+    routines_dir = os.environ.get("ROUTINES_DIR") or _config.get("routines_dir", "./routines")
+    _skills   = load_skills(skills_dir)
+    _routines = load_routines(routines_dir)
     print(f"[agent] {len(_skills)} skills, {len(_routines)} routines loaded")
 
 

@@ -27,9 +27,14 @@ services:
       - /mnt/e/models/huggingface:/models:ro
       # Persist session memory
       - microclaw-memory:/root
+      # Persist ecosystem bootstrap cache
+      - microclaw-ecosystem:/data/ecosystem
     environment:
       - HF_HOME=/models
       - TRANSFORMERS_CACHE=/models
+      - SKILLS_DIR=${SKILLS_DIR:-/app/skills}
+      - ROUTINES_DIR=${ROUTINES_DIR:-/app/routines}
+      - ECOSYSTEM_CACHE=/data/ecosystem
     # GPU passthrough (CUDA)
     deploy:
       resources:
@@ -115,3 +120,4 @@ services:
 
 volumes:
   microclaw-memory:
+  microclaw-ecosystem:

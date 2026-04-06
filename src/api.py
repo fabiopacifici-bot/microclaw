@@ -5,6 +5,10 @@ Port 8769 by default.
 from fastapi import FastAPI
 from pydantic import BaseModel
 import yaml, agent, replica as rep, model as mdl
+import bootstrap as _bootstrap
+import os
+
+_BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 app = FastAPI(title="MicroClaw", version="0.1.0")
 
@@ -22,10 +26,16 @@ class TaskIn(BaseModel):
 @app.on_event("startup")
 async def startup():
     global _cfg
-    with open("config.yaml") as f:
+    with open(os.path.join(_BASE, "config.yaml")) as f:
         _cfg = yaml.safe_load(f)
-    mdl.load()
-    agent.init()
+    # Bootstrap skills and routines from ecosystem repos
+    counts = _bootstrap.bootstrap(_cfg)
+    if counts["skills"] or counts["routines"]:
+        print(f"[bootstrap] Added {counts['skills']} skills, {counts['routines']} routines from ecosystem")
+
+    _config_path = os.path.join(_BASE, "config.yaml")
+    mdl.load(_config_path)
+    agent.init(_config_path)
     print(f"[api] MicroClaw ready on :{_cfg['api']['port']}")
 
 

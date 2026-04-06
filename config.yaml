@@ -26,3 +26,10 @@ model:
   path: /mnt/e/models/huggingface/hub/models--google--gemma-4-E2B-it/snapshots/4742fe843cc01b9aed62122f6e0ddd13ea48b3d3
 routines_dir: /home/pacificDev/.openclaw/workspace/routines
 skills_dir: /home/pacificDev/.openclaw/workspace/skills
+
+ecosystem:
+  community: fabiopacifici-bot/microclaw_community_ecosystem
+  private: fabiopacifici-bot/microclaw_private_ecosystem
+  branch: main
+  cache_dir: ~/.microclaw/ecosystem
+  bootstrap_on_startup: true
