@@ -29,8 +29,6 @@ def load(config_path="config.yaml"):
     model_source = os.environ.get("MODEL_SOURCE", "local")
 
     if model_source == "docker-hub":
-        # Docker Model Runner: use model ID directly, HuggingFace will resolve it
-        # Full Docker Model Runner API integration pending (docker/model-runner)
         model_path = os.environ.get("MODEL_ID", cfg["model"]["name"])
         print(f"[model] Docker Hub mode — using {model_path}")
     else:
@@ -50,24 +48,29 @@ def load(config_path="config.yaml"):
 
 def infer(messages: list, max_new_tokens=512) -> str:
     """Run a chat completion. messages = OpenAI-style list with string content."""
-    # Gemma 4 processor requires content as list of dicts with 'type' key
+    # Gemma 4 uses 'model' not 'assistant' for assistant role
     formatted = []
     for m in messages:
+        role = m["role"]
+        if role == "assistant":
+            role = "model"
         content = m["content"]
         if isinstance(content, str):
             content = [{"type": "text", "text": content}]
-        formatted.append({"role": m["role"], "content": content})
+        formatted.append({"role": role, "content": content})
 
-    inputs = _processor.apply_chat_template(
+    text = _processor.apply_chat_template(
         formatted,
+        tokenize=False,
         add_generation_prompt=True,
-        tokenize=True,
-        return_tensors="pt"
-    ).to(_model.device)
+        enable_thinking=False,
+    )
+    inputs = _processor(text=text, return_tensors="pt").to(_model.device)
+    input_len = inputs["input_ids"].shape[-1]
 
     with torch.no_grad():
-        out = _model.generate(inputs, max_new_tokens=max_new_tokens, do_sample=False)
-    return _processor.decode(out[0][inputs.shape[-1]:], skip_special_tokens=True)
+        out = _model.generate(inputs["input_ids"], max_new_tokens=max_new_tokens, do_sample=False)
+    return _processor.decode(out[0][input_len:], skip_special_tokens=True).strip()
 
 
 def infer_with_tools(
@@ -84,21 +87,19 @@ def infer_with_tools(
     from tools import execute_tool
     import json
 
-    current_messages = [m.copy() for m in messages]
+    current_messages = []
+    for m in messages:
+        role = m["role"]
+        if role == "assistant":
+            role = "model"
+        content = m["content"]
+        if isinstance(content, str):
+            content = [{"type": "text", "text": content}]
+        current_messages.append({"role": role, "content": content})
 
     for step in range(max_steps):
-        formatted = []
-        for m in current_messages:
-            content = m["content"]
-            if isinstance(content, str):
-                content = [{"type": "text", "text": content}]
-            entry = {"role": m["role"], "content": content}
-            if "name" in m:
-                entry["name"] = m["name"]
-            formatted.append(entry)
-
         text = _processor.apply_chat_template(
-            formatted,
+            current_messages,
             tools=tools,
             tokenize=False,
             add_generation_prompt=True,
@@ -112,16 +113,16 @@ def infer_with_tools(
                 **inputs,
                 max_new_tokens=512,
                 do_sample=False,
-                temperature=1.0,
-                top_p=0.95,
-                top_k=64,
             )
 
-        response_text = _processor.decode(out[0][input_len:], skip_special_tokens=True)
+        # Decode both ways — use raw for tool call parsing, clean for display
+        response_raw = _processor.decode(out[0][input_len:], skip_special_tokens=False)
+        response_clean = _processor.decode(out[0][input_len:], skip_special_tokens=True).strip()
 
-        tool_call = _parse_tool_call(response_text)
+        tool_call = _parse_tool_call(response_raw)
         if tool_call is None:
-            return response_text.strip()
+            print(f"[tool] final answer after {step} steps", flush=True)
+            return response_clean
 
         tool_name = tool_call.get("name") or tool_call.get("function", {}).get("name", "")
         tool_args = tool_call.get("arguments") or tool_call.get("function", {}).get("arguments", {})
@@ -131,46 +132,64 @@ def infer_with_tools(
             except Exception:
                 tool_args = {}
 
-        print(f"[tool] {tool_name}({json.dumps(tool_args)[:80]}...)", flush=True)
+        print(f"[tool] step {step}: {tool_name}({json.dumps(tool_args)[:80]})", flush=True)
         result = execute_tool(tool_name, tool_args, workspace=workspace)
-        print(f"[tool] result: {result[:100]}...", flush=True)
+        print(f"[tool] result: {result[:100]}", flush=True)
 
-        current_messages.append({"role": "assistant", "content": response_text})
+        # Feed result back using user message format (reliable across Gemma versions)
         current_messages.append({
-            "role": "tool",
-            "content": json.dumps({"result": result}),
-            "name": tool_name,
+            "role": "model",
+            "content": [{"type": "text", "text": response_clean or f"[called {tool_name}]"}]
+        })
+        current_messages.append({
+            "role": "user",
+            "content": [{"type": "text", "text": f"Tool `{tool_name}` result:\n{result}\n\nPlease provide your final answer based on the tool result above."}]
         })
 
     return "(max steps reached)"
 
 
 def _parse_tool_call(text: str) -> "dict | None":
-    """Try to extract a tool call JSON from model output."""
+    """Try to extract a tool call from model output (raw, with special tokens)."""
     import json
     import re
 
-    # Pattern 1: Gemma 4 native format — call:tool_name{arg:val, ...}
-    m = re.search(r"call:(\w+)\{([^}]*)\}", text)
+    # Pattern 1: Gemma 4 with special tokens preserved
+    # <|tool_call>call:exec_shell{command:<|"|>date<|"|>}<tool_call|>
+    # The <|"|> tokens are string delimiters
+    m = re.search(r'call:(\w+)\{([^}]*)\}', text)
     if m:
         tool_name = m.group(1)
         raw_args = m.group(2)
-        # Parse key:value pairs (simple, not full JSON)
+        # Remove Gemma string delimiter tokens <|"|>
+        raw_args = re.sub(r'<\|"\|>', '"', raw_args)
+        raw_args = raw_args.strip()
         args = {}
-        for pair in re.findall(r'(\w+):\s*([^,}]+)', raw_args):
-            args[pair[0].strip()] = pair[1].strip().strip('"').strip("'")
-        return {"name": tool_name, "arguments": args}
+        # Try JSON parse of args as object
+        try:
+            args = json.loads('{' + raw_args + '}')
+        except Exception:
+            # Fall back to key:value parsing
+            for pair in re.findall(r'(\w+):\s*"([^"]*)"', raw_args):
+                args[pair[0]] = pair[1]
+            if not args:
+                for pair in re.findall(r'(\w+):\s*([^,}]+)', raw_args):
+                    args[pair[0].strip()] = pair[1].strip().strip('"')
+        if tool_name and args:
+            return {"name": tool_name, "arguments": args}
 
     # Pattern 2: JSON code block
-    m = re.search(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL)
+    m = re.search(r'```json\s*(\{.*?\})\s*```', text, re.DOTALL)
     if m:
         try:
-            return json.loads(m.group(1))
+            data = json.loads(m.group(1))
+            if 'name' in data or 'function' in data:
+                return data
         except Exception:
             pass
 
     # Pattern 3: <tool_call> tags
-    m = re.search(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", text, re.DOTALL)
+    m = re.search(r'<tool_call>\s*(\{.*?\})\s*</tool_call>', text, re.DOTALL)
     if m:
         try:
             return json.loads(m.group(1))
@@ -187,10 +206,10 @@ def _parse_tool_call(text: str) -> "dict | None":
 
     # Pattern 5: Raw JSON object with name/function key
     stripped = text.strip()
-    if stripped.startswith("{") and stripped.endswith("}"):
+    if stripped.startswith('{') and stripped.endswith('}'):
         try:
             data = json.loads(stripped)
-            if "name" in data or "function" in data:
+            if 'name' in data or 'function' in data:
                 return data
         except Exception:
             pass
