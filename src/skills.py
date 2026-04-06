@@ -20,6 +20,7 @@ def _parse_skill(path: Path) -> dict | None:
     return {
         "name": fm.get("name", path.parent.name),
         "description": fm.get("description", ""),
+        "commands": fm.get("commands", fm.get("metadata", {}).get("commands", [])),
         "instructions": m.group(2).strip(),
         "path": str(path),
     }

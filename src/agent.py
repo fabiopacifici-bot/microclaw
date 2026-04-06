@@ -28,7 +28,55 @@ def triage(text: str) -> str:
     Classify and handle a user request.
     Returns the response string.
     """
-    lower = text.lower()
+    lower = text.lower().strip()
+
+    # --- Slash commands (highest priority) ---
+    if lower.startswith("/skills"):
+        lines = [f"• {s['name']} — {s.get('description', '')}" for s in _skills]
+        return "\n".join(lines) if lines else "No skills loaded."
+
+    if lower.startswith("/routines"):
+        lines = [f"• {r['name']} — {r.get('description', '')}" for r in _routines]
+        return "\n".join(lines) if lines else "No routines loaded."
+
+    if lower.startswith("/run "):
+        name = text[5:].strip().lower()
+        for r in _routines:
+            if r["name"].lower() == name:
+                print(f"[agent] /run routine: {r['name']}")
+                return run_routine(r, infer, workspace="/home/pacificDev/.openclaw/workspace")
+        for s in _skills:
+            if s["name"].lower() == name:
+                print(f"[agent] /run skill: {s['name']}")
+                return run_skill(s, text, infer)
+        return f"No skill or routine named '{name}' found."
+
+    if lower.startswith("/skill "):
+        # Explicit skill invocation with fuzzy name matching
+        query = text[7:].strip().lower()
+        matched = None
+        for s in _skills:
+            sname = s["name"].lower()
+            sdesc = s.get("description", "").lower()
+            scmds = [c.lower().lstrip("/") for c in s.get("commands", [])]
+            if query == sname or query in sdesc or query in scmds or sname.startswith(query):
+                matched = s
+                break
+        if matched:
+            print(f"[agent] /skill explicit: {matched['name']}")
+            return run_skill(matched, text, infer)
+        return f"No skill matching '{query}' found. Try /skills to list all."
+
+    if lower.startswith("/status"):
+        replicas = active_replicas()
+        return (
+            f"MicroClaw status:\n"
+            f"  VRAM free: {vram_free_mb()} MB\n"
+            f"  Active replicas: {len(replicas)}/{3}\n"
+            f"  Can spawn: {can_spawn()}\n"
+            f"  Skills: {len(_skills)}\n"
+            f"  Routines: {len(_routines)}"
+        )
 
     # --- Routine trigger ---
     for r in _routines:
@@ -36,11 +84,20 @@ def triage(text: str) -> str:
             print(f"[agent] Running routine: {r['name']}")
             return run_routine(r, infer, workspace="/home/pacificDev/.openclaw/workspace")
 
-    # --- Skill trigger ---
+    # --- Skill trigger (improved matching: name, description keywords, commands) ---
     for s in _skills:
-        if s["name"].lower() in lower:
-            print(f"[agent] Running skill: {s['name']}")
+        sname = s["name"].lower()
+        sdesc_words = set(s.get("description", "").lower().split())
+        scmds = [c.lower().lstrip("/") for c in s.get("commands", [])]
+        # Match on skill name substring
+        if sname in lower:
+            print(f"[agent] Running skill (name match): {s['name']}")
             return run_skill(s, text, infer)
+        # Match on any command trigger
+        for cmd in scmds:
+            if cmd and cmd in lower:
+                print(f"[agent] Running skill (command match '{cmd}'): {s['name']}")
+                return run_skill(s, text, infer)
 
     # --- Status / system queries ---
     if any(w in lower for w in ["status", "vram", "replicas", "health"]):
