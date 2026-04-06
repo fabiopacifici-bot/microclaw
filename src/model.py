@@ -74,7 +74,7 @@ def infer_with_tools(
     messages: list,
     tools: list,
     workspace: str = "/home/pacificDev/.openclaw/workspace",
-    max_steps: int = 8,
+    max_steps: int = 15,
 ) -> str:
     """
     Agentic inference loop with native function calling.

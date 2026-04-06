@@ -96,8 +96,10 @@ def execute_tool(name: str, arguments: dict, workspace: str = WORKSPACE) -> str:
 
     elif name == "read_file":
         path = arguments["path"]
+        import os
+        path = os.path.expanduser(path)
         if not path.startswith("/"):
-            path = f"{workspace}/{path}"
+            path = path.replace("~/", "/home/pacificDev/"); path = f"{workspace}/{path}" if not path.startswith("/") else path
         try:
             with open(path) as f:
                 return f.read()[:3000]
@@ -118,7 +120,7 @@ def execute_tool(name: str, arguments: dict, workspace: str = WORKSPACE) -> str:
     elif name == "write_file":
         path = arguments["path"]
         if not path.startswith("/"):
-            path = f"{workspace}/{path}"
+            path = path.replace("~/", "/home/pacificDev/"); path = f"{workspace}/{path}" if not path.startswith("/") else path
         try:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
             with open(path, "w") as f:
