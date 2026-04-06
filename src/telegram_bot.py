@@ -163,15 +163,21 @@ def handle_message(chat_id: str, text: str):
         routine_name = text[5:].strip()
         send_message(chat_id, f"⚙️ Running routine `{routine_name}`...")
         _ensure_agent()
+        import yaml
+        with open(CONFIG_PATH) as _f: _cfg = yaml.safe_load(_f)
         from routines import load_all, find, run
-        from model import infer
-        routines = load_all(str(Path(__file__).parent.parent / "routines"))
+        from model import infer, infer_with_tools, _model
+        from tools import TOOLS
+        import os as _os
+        routines_dir = _os.environ.get("ROUTINES_DIR") or _cfg.get("routines_dir", str(Path(__file__).parent.parent / "routines"))
+        routines = load_all(routines_dir)
         r = find(routine_name, routines)
         if not r:
             send_message(chat_id, f"❌ Routine `{routine_name}` not found.")
             return
-        result = run(r, infer)
-        send_message(chat_id, f"✅ `{routine_name}` complete:\n\n{result[:3000]}")
+        # Use tool-calling loop if model is loaded, plain infer otherwise
+        result = run(r, infer, workspace=_cfg.get("workspace", "/home/pacificDev/.openclaw/workspace"))
+        send_message(chat_id, f"✅ `{routine_name}` complete:\n\n{result[:3800]}")
         return
 
     # Regular chat — route to agent
