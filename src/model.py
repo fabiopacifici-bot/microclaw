@@ -150,20 +150,42 @@ def _parse_tool_call(text: str) -> "dict | None":
     import json
     import re
 
-    patterns = [
-        r"```json\s*(\{.*?\})\s*```",
-        r"<tool_call>\s*(\{.*?\})\s*</tool_call>",
-        r'(\{"name":\s*"[^"]+",\s*"arguments":\s*\{.*?\}\s*\})',
-        r'(\{"function":\s*\{.*?\}\s*\})',
-    ]
-    for pattern in patterns:
-        m = re.search(pattern, text, re.DOTALL)
-        if m:
-            try:
-                return json.loads(m.group(1))
-            except Exception:
-                continue
+    # Pattern 1: Gemma 4 native format — call:tool_name{arg:val, ...}
+    m = re.search(r"call:(\w+)\{([^}]*)\}", text)
+    if m:
+        tool_name = m.group(1)
+        raw_args = m.group(2)
+        # Parse key:value pairs (simple, not full JSON)
+        args = {}
+        for pair in re.findall(r'(\w+):\s*([^,}]+)', raw_args):
+            args[pair[0].strip()] = pair[1].strip().strip('"').strip("'")
+        return {"name": tool_name, "arguments": args}
 
+    # Pattern 2: JSON code block
+    m = re.search(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL)
+    if m:
+        try:
+            return json.loads(m.group(1))
+        except Exception:
+            pass
+
+    # Pattern 3: <tool_call> tags
+    m = re.search(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", text, re.DOTALL)
+    if m:
+        try:
+            return json.loads(m.group(1))
+        except Exception:
+            pass
+
+    # Pattern 4: OpenAI-style {"name": ..., "arguments": {...}}
+    m = re.search(r'(\{"name":\s*"[^"]+",\s*"arguments":\s*\{.*?\}\s*\})', text, re.DOTALL)
+    if m:
+        try:
+            return json.loads(m.group(1))
+        except Exception:
+            pass
+
+    # Pattern 5: Raw JSON object with name/function key
     stripped = text.strip()
     if stripped.startswith("{") and stripped.endswith("}"):
         try:
@@ -172,6 +194,7 @@ def _parse_tool_call(text: str) -> "dict | None":
                 return data
         except Exception:
             pass
+
     return None
 
 
